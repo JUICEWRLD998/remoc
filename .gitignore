@@ -1,0 +1,26 @@
+# Build artifacts
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# Local tooling / agent config — not part of the project
+.claude/
+.hermes/
+
+# Research scratch (raw scrapes, dumps). Curated evidence lives in docs/research/.
+.recon/
+
+# Env / secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
