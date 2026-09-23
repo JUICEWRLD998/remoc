@@ -86,17 +86,34 @@ Three rules are load-bearing. Breaking any one turns the mechanism into theatre.
 ## Repository layout
 
 ```
-contracts/                      Foundry project (forge 1.8.1, solc 0.8.19)
+contracts/                          Foundry project (forge 1.8.1, solc 0.8.19)
+  src/interfaces/IRemoc.sol         the FROZEN interface
+  src/AssertionRegistry.sol         assertion bytes on-chain, immutable
+  src/ClaimManager.sol              claim lifecycle; sole mover of bonds
+  src/ForkVerifier.sol              staked, permissionless, one-shot verdicts
+  src/BondEscrow.sol                custody
+  src/ProofRegistry.sol             composability surface (refutedFor / heldFor)
+  src/Predicates.sol                the 3 predicates + arity pinning
+  src/libraries/CodeHash.sol        the anchor
   src/fixture/PendingProtocol.sol   Phase 0.4 prospective fixture (dependency-free)
+  test/Phase1.t.sol                 27 tests over the protocol
   test/fixtures/EulerInvariant.t.sol  the $197M defect reproduces
   test/fixtures/AaveHolds.t.sol       the falsification pair
   test/fixtures/TimelockPending.t.sol verdict on not-yet-live code
-docs/research/                  evidence scripts (re-run them yourself)
-  determinism2.mjs              cross-provider replay determinism
-  fixture.mjs                   historical bytecode retrieval
-  probe.sh                      free-tier RPC capability probe
-IMPLEMENTATION.md               build plan, phase gates, risk register
-IDEA_REMOC.md                   the idea brief
+daemon/                             verifier daemon — ZERO runtime dependencies
+  src/keccak.mjs                    keccak256 (Node's sha3-256 is NOT keccak256)
+  src/anchor.mjs                    anchor certification; throws, never returns a flag
+  src/ProviderPool.mjs              RPC rotation; never a silent empty result
+  src/ForkCache.mjs                 one fork per (chain, block, codehash)
+  src/replay.mjs                    certify -> snapshot -> pin clock -> execute -> verify
+  src/fixtures/euler.mjs            the job pair (codehash computed, not hardcoded)
+  src/index.mjs                     CLI
+docs/research/                      evidence scripts (re-run them yourself)
+  determinism2.mjs                  cross-provider replay determinism
+  fixture.mjs                       historical bytecode retrieval
+  probe.sh                          free-tier RPC capability probe
+IMPLEMENTATION.md                   build plan, phase gates, risk register
+IDEA_REMOC.md                       the idea brief
 ```
 
 `contracts/lib/forge-std` is **vendored** deliberately, so `forge test` works on a plain `git clone`
@@ -131,6 +148,34 @@ Expect: collateral falls `97.529e18 → 1e18` against outstanding debt, and the 
 Then run `test_control_withdraw_isChecked` and watch the same collateral reduction revert
 `e/collateral-violation`.
 
+### Run the verifier daemon
+
+Requires `anvil` on `PATH` (it spawns local forks) and Node 22+. No install step — there are no
+dependencies to fetch.
+
+```bash
+cd daemon
+npm run fixture           # the falsification pair + the anchor-mismatch control
+npm test                  # 27 tests
+```
+
+Expected output, against the real pinned fixture:
+
+```
+=== control: wrong codehash must ABORT, not proceed ===
+PASS: AnchorMismatch — job aborted before execution
+
+=== replay: donateToReserves (unchecked) ===   verdict REFUTED   deterministic true
+=== replay: withdraw (checked) ===             verdict HELD      deterministic true
+
+PASS: the mechanism discriminates. An always-true assertion would have passed both.
+```
+
+To file a claim against a **filed** job rather than a fixture, the job's `steps` must be the
+`abi.encode(Step[])` form the contracts commit — see `daemon/src/fixtures/euler.mjs`. The daemon
+certifies the anchor **before** executing anything, pins the fork's clock to the pinned block's own
+timestamp, and restores its snapshot afterwards, so re-running a job is byte-identical.
+
 ---
 
 ## Status
@@ -139,7 +184,7 @@ Then run `test_control_withdraw_isChecked` and watch the same collateral reducti
 |---|---|---|
 | **0** | Kill-switch de-risking (4 gates) | ✅ **complete** — all green, no fixture swap needed |
 | **1** | Protocol contracts + frozen interface | ✅ **complete** — 8 contracts, 27 tests, build exit 0 |
-| 2 | Verifier daemon | not started |
+| **2** | Verifier daemon | ✅ **complete** — 27 tests, 0 failed, zero runtime deps |
 | 3 | Fixtures wired to the protocol | not started |
 | 4 | Bonds, proofs, dispute path | partially done (bond/proof path live and tested; bisection + reward pool deferred) |
 | 5 | Frontend | not started |

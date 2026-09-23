@@ -1,0 +1,16 @@
+{
+  "name": "remoc-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "remoc verifier daemon — anchor certification, fork replay, deterministic verdicts. Zero runtime dependencies.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "fixture": "node src/index.mjs --fixture pair --control",
+    "fixture:euler": "node src/index.mjs --fixture euler",
+    "fixture:held": "node src/index.mjs --fixture euler-held"
+  }
+}

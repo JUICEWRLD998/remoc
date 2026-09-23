@@ -364,6 +364,82 @@ verdicts and trace hashes. Then once against the real free tier.
 confirm it reports `ANCHOR_MISMATCH` rather than proceeding. **An empty scan and a broken scanner look
 identical from inside** — a green path with no planted failure proves nothing.
 
+> ### ✅ RESULT 2026-09-23 — PASSED on branch `phase-2-daemon`
+>
+> **27 daemon tests, 0 failed; zero runtime dependencies** (Node 24 only). The CLI produces a real
+> verdict end-to-end against the pinned Euler fixture:
+>
+> ```
+> node src/index.mjs --fixture pair --control
+>
+> === anchor: certifying the pinned bytecode ===
+> target   0x27182842E098f60e3D576794A5bFFb0777E025d3
+> block    16700000
+> codehash 0xffbb4cca1ae9043cc8e357e51cbd2ee84339be739d97529a092c9156edfa550e
+> size     907 bytes
+>
+> === control: wrong codehash must ABORT, not proceed ===
+> PASS: AnchorMismatch — job aborted before execution
+>
+> === replay: donateToReserves (unchecked) ===
+> predicateId 0x3064767664523a36695e7527b1cfc2951e330512d27f188bd669c827bdd05f0b
+> verdict   REFUTED        reverted  false        deterministic true
+>
+> === replay: withdraw (checked) ===
+> predicateId 0x3064767664523a36695e7527b1cfc2951e330512d27f188bd669c827bdd05f0b
+> verdict   HELD           reverted  true         deterministic true
+>
+> === falsification: one predicate, two protocol states, opposite verdicts ===
+> PASS: the mechanism discriminates. An always-true assertion would have passed both.
+> ```
+>
+> | File | Role |
+> |---|---|
+> | `daemon/src/keccak.mjs` | keccak256, pure JS — **Node's `sha3-256` is NOT Ethereum's keccak256** |
+> | `daemon/src/ProviderPool.mjs` | rotates the 3 live RPCs, backs off on 429, `AllProvidersFailed` — never a silent empty result |
+> | `daemon/src/anchor.mjs` | the anchor; throws `AnchorMismatch` / `NoCodeAtTarget`, never returns a flag a caller can forget |
+> | `daemon/src/ForkCache.mjs` | one fork per `(chainId, block, codehash)`, readiness-polled, wrong-height fork rejected |
+> | `daemon/src/abi.mjs` / `encode.mjs` | minimal ABI codec; every decode validates length and throws |
+> | `daemon/src/replay.mjs` | certify → snapshot → pin clock → execute steps → evaluate → revert |
+> | `daemon/src/fixtures/euler.mjs` | the job pair; **codehash computed at build time, never hardcoded** |
+> | `daemon/src/index.mjs` | CLI |
+>
+> #### Four traps found and fixed during Phase 2 — each one a silent-wrong
+>
+> 1. **Node's `sha3-256` is NIST SHA-3, not keccak256.** They differ by one padding byte (`0x06` vs
+>    `0x01`) and agree in nothing else. Using it would have made every anchor check and every
+>    `predicateId` wrong while looking entirely plausible. Hand-rolled keccak instead, verified
+>    against `cast keccak` on real deployed bytecode, with a negative control asserting the empty-string
+>    hash is `0xc5d246…` and NOT the SHA-3 `0xa7ffc6…`.
+> 2. **`block.timestamp` drift broke determinism.** Run 1 and run 2 agreed on the verdict but produced
+>    *different trace hashes*, because each setup step mines a block and Euler accrues interest from
+>    the timestamp. Fixed by pinning the clock to the **pinned block's own timestamp** inside the
+>    snapshot bracket (`anvil_setBlockTimestampInterval(0)` + `evm_setNextBlockTimestamp`). This is
+>    also the semantically correct choice: a claim is about state *at block N*, so it is evaluated as
+>    of block N, not as of whenever the daemon ran.
+> 3. **A single `eth_call` cannot express the fixture.** Reproducing the defect needs a position and
+>    outstanding debt first, so jobs carry a **step sequence** and the daemon sends real transactions
+>    for the leading steps. Setup steps must SUCCEED (`SetupStepFailed`) — a verdict for a job that
+>    never reached the code under test is a lie about a job that did not run.
+> 4. **A revert is an observation, not a transport failure.** Conflating them inverts every
+>    "the check is missing" verdict into "the call failed to run" — the daemon would confidently
+>    report the opposite of the truth. `ReplayTransportError` and `{reverted:true}` are distinct types.
+>
+> #### Verified cross-checks (controls that are a different tool, not my own memory)
+> - `keccak256` vs `cast keccak` on real WETH bytecode and on 135/136/137/271/272/273/1000-byte inputs.
+> - Anchor codehash vs `cast code` + `cast keccak` at block 16,700,000.
+> - **JS-derived predicate ids vs `cast keccak` of the Solidity strings — all three match**
+>   (`healthChecked` = `0x30647676…5f0b`). If these diverged, no filed claim could ever be verified.
+> - Drift guard: Euler's pinned code is still **907 bytes** (test fails loudly if the pin moves).
+>
+> #### Honest notes
+> - The daemon is **not yet wired to the Sepolia contracts.** Phase 3 does that. This phase proves the
+>   mechanic; nothing here submits `fulfillVerification`.
+> - `forge-std`-style conveniences are deliberately absent: no `deal`, so the fixture wraps real ETH.
+> - `npm test` uses bare `node --test` — `node --test test/` fails on Windows with `MODULE_NOT_FOUND`
+>   because Node resolves the bare directory as a module path rather than scanning it.
+
+
 ---
 
 ## Phase 3 — Fixtures green, both directions
@@ -482,7 +558,7 @@ Orchestrator does the shared foundation **first**, then one agent per disjoint f
 - [x] **Phase 0.3** Aave holds the same predicate — ✅ **PASSED 2026-09-23** (Aave V3, reverts `35`)
 - [x] **Phase 0.4** prospective fixture: verdict on not-yet-live timelocked code — ✅ **PASSED 2026-09-23** (authored fallback; mainnet target still unsourced — see limitation)
 - [x] **Phase 1** scaffold + interface frozen + public repo pushed (`git ls-remote` verified) — ✅ **PASSED 2026-09-23** on `phase-1-protocol-contracts`
-- [ ] **Phase 2** daemon end-to-end, idempotent, anchor-mismatch control fires
+- [x] **Phase 2** daemon end-to-end, idempotent, anchor-mismatch control fires — ✅ **PASSED 2026-09-23** (27 tests, 0 failed, zero deps)
 - [ ] **Phase 3** Euler refutes **and** Aave holds **and** timelock verdicts, all CI-enforced, reproducer generated
 - [ ] **Phase 4** dispute path moves money
 - [ ] **Phase 5** frontend driven in a real browser, contrast measured
