@@ -138,10 +138,10 @@ Then run `test_control_withdraw_isChecked` and watch the same collateral reducti
 | Phase | Scope | State |
 |---|---|---|
 | **0** | Kill-switch de-risking (4 gates) | ✅ **complete** — all green, no fixture swap needed |
-| **1** | Protocol contracts + frozen interface | in progress |
+| **1** | Protocol contracts + frozen interface | ✅ **complete** — 8 contracts, 27 tests, build exit 0 |
 | 2 | Verifier daemon | not started |
 | 3 | Fixtures wired to the protocol | not started |
-| 4 | Bonds, proofs, dispute path | not started |
+| 4 | Bonds, proofs, dispute path | partially done (bond/proof path live and tested; bisection + reward pool deferred) |
 | 5 | Frontend | not started |
 | 6 | Submission artifacts | not started |
 

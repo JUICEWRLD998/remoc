@@ -284,6 +284,63 @@ function fulfillVerification(bytes32 requestId, bool assertionHeld, bytes32 trac
 **EXIT GATE:** `forge build` clean; `forge test` green on skeleton tests; repo pushed to a **public** remote
 (verify with `git ls-remote`, not the push exit code); git identity set.
 
+> ### ✅ RESULT 2026-09-23 — PASSED on branch `phase-1-protocol-contracts`
+>
+> Eight contracts, a frozen interface, and 27 tests — 34/34 green across Phase 0 + Phase 1.
+>
+> | File | Role |
+> |---|---|
+> | `src/interfaces/IRemoc.sol` | **the freeze**: `VerificationJob`, `ClaimState`, `IVerifier`, `IVerdictSink`, `IProofs`, `IAssertions` |
+> | `src/libraries/CodeHash.sol` | the anchor — `compute` / `matches` / `exists` (empty code is not a claim) |
+> | `src/libraries/Ownable.sol` | local two-step owner guard (OZ 5.x needs solc ≥0.8.20; this is 0.8.19) |
+> | `src/Predicates.sol` | the 3 predicates + **arity pinning**, rejecting trailing junk |
+> | `src/AssertionRegistry.sol` | assertion bytes on-chain, immutable, duplicate-registration reverts |
+> | `src/BondEscrow.sol` | custody; one-shot manager wiring; release/slash |
+> | `src/ForkVerifier.sol` | staked, permissionless, one-shot, window-bounded verdicts |
+> | `src/ProofRegistry.sol` | the composability surface (`refutedFor` / `heldFor` / `proofsFor`) |
+> | `src/ClaimManager.sol` | lifecycle; the only contract allowed to move bonds |
+>
+> ```
+> forge build            → exit 0
+> forge test --fork-url https://eth.drpc.org --fork-block-number 16700000
+>                        → 4 suites, 34 tests passed, 0 failed, 0 skipped
+> ```
+>
+> #### Interface split (changed from the plan, deliberately)
+> The plan sketched one fat `IRemoc`. That was wrong: a single interface containing
+> `fulfillVerification` forces `ProofRegistry` and `ClaimManager` to declare it, making them
+> **abstract and undeployable**. Split by responsibility instead. The frozen signature itself is
+> unchanged, and `test_frozenInterface_selectorMatches` asserts the daemon's ABI and the
+> contract's selector agree at compile time.
+>
+> #### 🐛 Real bug found and fixed during Phase 1
+> `onVerdict` originally called `escrow.slash(claimId, msg.sender)`, where `msg.sender` is the
+> **ForkVerifier contract**. Two defects in one line: the contract has no `receive()`, so the
+> transfer reverted (`TransferFailed`), and even with one it would credit *nobody* — the bond
+> belongs to the individual verifier who did the work. Fixed via `verifierOf(requestId)`, paying
+> the worker, with `NoVerifierOnJob` guarding the unreachable case.
+>
+> A second, quieter bug: `BondEscrow.slash` never decremented `lockedTotal`, so a filer's locked
+> total would grow forever and later claims would be sized against phantom locked funds. Both
+> `release` and `slash` now decrement against `filerOf[claimId]` — the original filer, not the
+> payee.
+>
+> #### ⚠️ Linter disabled on build (`[lint] lint_on_build = false`)
+> Foundry 1.8.1's lint engine fails on relative imports from `test/` with
+> `file ../../src/interfaces/IRemoc.sol not found`, then aborts with `post-build lint step failed`
+> **while explicitly reporting "compilation itself succeeded"**. Verified: `forge build --no-lint`
+> exits 0. Disabled so a clean build reflects the compiler rather than a known linter defect.
+> This is a tooling workaround, not a code problem — stated here so it is not mistaken for one.
+>
+> #### Open in Phase 1 (not blocking Phase 2)
+> - `ClaimManager` stores no `verifier`/`escrow`/`proofs`-set-at-deploy invariant beyond one-shot
+>   wiring; a deployment script must set all three or filing reverts.
+> - The full bisection fraud proof, verifier slashing arbitration, and a filer reward pool are
+>   **Phase 4** and are deliberately **not** stubbed with a fake implementation. The current
+>   economy returns a correct filer's bond but pays no surplus — recorded as a known gap in the
+>   contract comments and the README's "Known gaps".
+
+
 **Scope guard — do NOT build:** a token, a DAO, formal verification, full EVM bisection, an LLM verdict path.
 
 ---
@@ -424,7 +481,7 @@ Orchestrator does the shared foundation **first**, then one agent per disjoint f
 - [x] **Phase 0.2** Euler attack replicates on fork — ✅ **PASSED 2026-09-23** (no fixture swap needed)
 - [x] **Phase 0.3** Aave holds the same predicate — ✅ **PASSED 2026-09-23** (Aave V3, reverts `35`)
 - [x] **Phase 0.4** prospective fixture: verdict on not-yet-live timelocked code — ✅ **PASSED 2026-09-23** (authored fallback; mainnet target still unsourced — see limitation)
-- [ ] **Phase 1** scaffold + interface frozen + public repo pushed (`git ls-remote` verified)
+- [x] **Phase 1** scaffold + interface frozen + public repo pushed (`git ls-remote` verified) — ✅ **PASSED 2026-09-23** on `phase-1-protocol-contracts`
 - [ ] **Phase 2** daemon end-to-end, idempotent, anchor-mismatch control fires
 - [ ] **Phase 3** Euler refutes **and** Aave holds **and** timelock verdicts, all CI-enforced, reproducer generated
 - [ ] **Phase 4** dispute path moves money

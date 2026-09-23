@@ -6,3 +6,24 @@ test = "test"
 solc_version = "0.8.19"
 optimizer = true
 optimizer_runs = 200
+fuzz_runs = 256
+
+# Forked fixture suites need an archive endpoint. Passed explicitly on the command line in CI
+# and in the README, because forge does not always honour `eth_rpc_url` for test forks.
+eth_rpc_url = "https://eth.drpc.org"
+fork_block_number = 16700000
+fork_retries = 10
+
+[rpc_endpoints]
+mainnet = "https://eth.drpc.org"
+mainnet_alt = "https://eth-mainnet.public.blastapi.io"
+tenderly = "https://mainnet.gateway.tenderly.io"
+
+# NOTE: foundry 1.8.1's lint engine (solar) fails on relative imports used from `test/`
+# with "file ../../src/... not found" and then aborts the whole build with
+# "post-build lint step failed", even though it reports "compilation itself succeeded".
+# Verified: `forge build --no-lint` exits 0. Disabled so a clean build reflects the
+# compiler, not a known linter defect. Run `forge lint` manually if you want the linter,
+# and expect the same false positives.
+[lint]
+lint_on_build = false
